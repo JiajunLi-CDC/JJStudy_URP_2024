@@ -1,21 +1,30 @@
 using UnityEditor;
 using UnityEngine;
 using System.Collections.Generic;
+using Habrador_Computational_Geometry;
+using System.Linq;
+using System.IO;
 
 public class EffectClipperTool : EditorWindow
 {
-    private Texture2D selectedImage; // 用户选择的图片
-    private List<Contour> outerContours = new List<Contour>(); // 存储外轮廓和Hole
-    private Contour currentDrawingContour = null; // 当前正在绘制的轮廓
-    private bool isDrawing = false; // 是否在绘制状态
-    private bool isDrawMode = true; // true 表示 "绘制/删除" 模式，false 表示 "移动/添加" 模式
-    private int draggedPointIndex = -1; // 当前被拖动的点
+    private Texture2D selectedImage;
+    private List<Contour> outerContours = new List<Contour>();
+    private Contour currentDrawingContour = null;
+    private bool isDrawing = false;
+    private bool isDrawMode = true;
+    private int draggedPointIndex = -1;
 
-    private enum Channel { RGBA, R, G, B, A } // 通道枚举
-    private Channel selectedChannel = Channel.RGBA; // 默认选择RGBA通道
+    private Mesh generatedMesh = null;
 
-    private Texture2D cachedTexture = null; // 缓存的纹理
-    private Texture2D originalImage = null; // 用于检查图片是否更换
+    private enum Channel { RGBA, R, G, B, A }
+    private Channel selectedChannel = Channel.RGBA;
+
+    private Texture2D cachedTexture = null;
+    private Texture2D originalImage = null;
+
+    // 新增的路径和文件名字段
+    private string saveFolderPath = "";
+    private string saveFileName = "GeneratedMesh.obj";
 
     [MenuItem("Tools/特效工具/特效裁剪工具")]
     static void ShowWindow()
@@ -35,19 +44,20 @@ public class EffectClipperTool : EditorWindow
     private void OnGUI()
     {
         Event e = Event.current;
-        // 处理回车键结束绘制的功能
+
         if (e.type == EventType.KeyDown && e.keyCode == KeyCode.Return)
         {
             if (isDrawing && currentDrawingContour != null)
             {
-                ToggleDrawing(currentDrawingContour); // 结束当前绘制
+                ToggleDrawing(currentDrawingContour);
                 Repaint();
+                e.Use();
             }
         }
 
         if (e.type == EventType.KeyDown && e.keyCode == KeyCode.Tab)
         {
-            isDrawMode = !isDrawMode; // 切换模式
+            isDrawMode = !isDrawMode;
             Repaint();
             e.Use();
         }
@@ -69,7 +79,6 @@ public class EffectClipperTool : EditorWindow
 
         EditorGUILayout.Space();
 
-        // 通道选择部分
         GUILayout.Label("通道选择", EditorStyles.boldLabel);
         EditorGUILayout.BeginHorizontal();
         selectedChannel = (Channel)EditorGUILayout.EnumPopup("选择通道: ", selectedChannel);
@@ -77,11 +86,9 @@ public class EffectClipperTool : EditorWindow
 
         EditorGUILayout.Space();
 
-        // 检测图片是否更换
         Texture2D newSelectedImage = ObjectFieldWithoutThumbnail("放置图片", selectedImage, typeof(Texture2D)) as Texture2D;
         if (newSelectedImage != selectedImage)
         {
-            // 如果图片更换，清除轮廓和holes
             selectedImage = newSelectedImage;
             outerContours.Clear();
             outerContours.Add(new Contour("外轮廓1"));
@@ -90,37 +97,38 @@ public class EffectClipperTool : EditorWindow
 
         if (selectedImage != null)
         {
-            // 检查图片是否更换或通道是否改变
-            if (originalImage != selectedImage || cachedTexture == null)
+            if (!selectedImage.isReadable)
             {
-                originalImage = selectedImage; // 更新原始图片引用
-                cachedTexture = GenerateTextureWithChannel(selectedImage, selectedChannel); // 重新生成纹理
+                EditorGUILayout.HelpBox("图片未启用读写，请在图片导入设置中启用读写功能。", MessageType.Error);
             }
 
-            // 计算窗口宽度的80%作为画布宽度，并保持图片长宽比
+            if (originalImage != selectedImage || cachedTexture == null)
+            {
+                originalImage = selectedImage;
+                cachedTexture = GenerateTextureWithChannel(selectedImage, selectedChannel);
+            }
+
             float windowWidth = position.width;
             float canvasWidth = windowWidth * 0.8f;
             float aspectRatio = (float)selectedImage.width / selectedImage.height;
             float canvasHeight = canvasWidth / aspectRatio;
 
-            // 居中显示画布
             GUILayout.BeginHorizontal();
             GUILayout.FlexibleSpace();
             Rect imageRect = GUILayoutUtility.GetRect(canvasWidth, canvasHeight, GUILayout.Width(canvasWidth), GUILayout.Height(canvasHeight));
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
 
-            // 绘制缓存的图片纹理
             GUI.DrawTexture(imageRect, cachedTexture, ScaleMode.ScaleToFit);
-
-            // 绘制画布框
             Handles.DrawSolidRectangleWithOutline(imageRect, Color.clear, Color.white);
-
-            // 处理鼠标事件
             HandleMouseEvents(imageRect);
-
-            // 绘制所有轮廓
             DrawAllContours(imageRect);
+
+            // 显示生成的网格叠加在画布上
+            if (generatedMesh != null)
+            {
+                DrawMeshOverlay(imageRect, generatedMesh);
+            }
         }
         else
         {
@@ -137,20 +145,168 @@ public class EffectClipperTool : EditorWindow
         EditorGUILayout.EndHorizontal();
 
         DrawOuterContourList();
+
+        EditorGUILayout.Space();
+        GUILayout.Label("生成网格", EditorStyles.boldLabel);
+
+        EditorGUILayout.BeginHorizontal();
+        if (GUILayout.Button("生成网格", GUILayout.Width(150)))
+        {
+            GenerateMeshFromContours();
+        }
+
+        if (GUILayout.Button("清除网格", GUILayout.Width(150)))
+        {
+            ClearMesh();
+        }
+        EditorGUILayout.EndHorizontal();
+
+        // 添加输入框和保存按钮
+        GUILayout.Label("保存路径", EditorStyles.boldLabel);
+        saveFolderPath = EditorGUILayout.TextField("输入文件夹路径", saveFolderPath);
+        saveFileName = EditorGUILayout.TextField("输入文件名", saveFileName);
+
+        if (GUILayout.Button("保存网格到文件", GUILayout.Width(200)))
+        {
+            SaveMeshToFile(Path.Combine(saveFolderPath, saveFileName + ".obj"));
+        }
     }
 
-    // 生成纹理并根据通道进行显示（仅在图片或通道更换时调用）
+    // 画布上显示半透明网格
+    private void DrawMeshOverlay(Rect imageRect, Mesh mesh)
+    {
+        Vector3[] vertices = mesh.vertices;
+        int[] triangles = mesh.triangles;
+
+        Handles.color = new Color(0, 1, 0, 0.3f); // 半透明绿色
+
+        for (int i = 0; i < triangles.Length; i += 3)
+        {
+            Vector2 v0 = WorldToCanvas(vertices[triangles[i]], imageRect);
+            Vector2 v1 = WorldToCanvas(vertices[triangles[i + 1]], imageRect);
+            Vector2 v2 = WorldToCanvas(vertices[triangles[i + 2]], imageRect);
+
+            Handles.DrawAAConvexPolygon(new Vector3[] { v0, v1, v2 });
+            Handles.DrawLine(v0, v1);
+            Handles.DrawLine(v1, v2);
+            Handles.DrawLine(v2, v0);
+        }
+    }
+
+    // 将网格顶点坐标转换到画布上的位置
+    private Vector2 WorldToCanvas(Vector3 worldPoint, Rect canvasRect)
+    {
+        float x = worldPoint.x * canvasRect.width + canvasRect.x;
+        float y = (1 - worldPoint.z) * canvasRect.height + canvasRect.y;
+
+        return new Vector2(x, y);
+    }
+
+    private void GenerateMeshFromContours()
+    {
+        ClearMesh();
+        List<Mesh> meshes = new List<Mesh>();
+
+        foreach (var contour in outerContours)
+        {
+            List<MyVector2> hullPoints_2d = contour.points.Select(p => new MyVector2(p.x, 1 - p.y)).ToList();
+            if (IsPolygonCounterClockwise(hullPoints_2d))
+            {
+                hullPoints_2d.Reverse();
+            }
+
+            HashSet<List<MyVector2>> holePointsSets_2d = new HashSet<List<MyVector2>>();
+            foreach (var hole in contour.holes)
+            {
+                List<MyVector2> holePoints_2d = hole.points.Select(p => new MyVector2(p.x, 1 - p.y)).ToList();
+                if (!IsPolygonCounterClockwise(holePoints_2d))
+                {
+                    holePoints_2d.Reverse();
+                }
+
+                holePointsSets_2d.Add(holePoints_2d);
+            }
+
+            List<MyVector2> allPoints = new List<MyVector2>();
+            allPoints.AddRange(hullPoints_2d);
+            foreach (List<MyVector2> holePoints in holePointsSets_2d)
+            {
+                allPoints.AddRange(holePoints);
+            }
+
+            Normalizer2 normalizer = new Normalizer2(allPoints);
+            List<MyVector2> hullPoints_2d_normalized = normalizer.Normalize(hullPoints_2d);
+            HashSet<List<MyVector2>> allHolePoints_2d_normalized = new HashSet<List<MyVector2>>();
+            foreach (List<MyVector2> hole in holePointsSets_2d)
+            {
+                List<MyVector2> hole_normalized = normalizer.Normalize(hole);
+                allHolePoints_2d_normalized.Add(hole_normalized);
+            }
+
+            HalfEdgeData2 triangleData_normalized = _Delaunay.ConstrainedBySloan(
+                null, hullPoints_2d_normalized, allHolePoints_2d_normalized, shouldRemoveTriangles: true, new HalfEdgeData2());
+            HalfEdgeData2 unNormalizedTriangleData = normalizer.UnNormalize(triangleData_normalized);
+
+            HashSet<Triangle2> triangles = _TransformBetweenDataStructures.HalfEdge2ToTriangle2(unNormalizedTriangleData);
+            triangles = HelpMethods.OrientTrianglesClockwise(triangles);
+
+            HashSet<Triangle3<MyVector3>> triangles3D = new HashSet<Triangle3<MyVector3>>();
+            foreach (var triangle in triangles)
+            {
+                triangles3D.Add(new Triangle3<MyVector3>(
+                    triangle.p1.ToMyVector3_Yis3D(),
+                    triangle.p2.ToMyVector3_Yis3D(),
+                    triangle.p3.ToMyVector3_Yis3D()
+                ));
+            }
+
+            Mesh meshPart = _TransformBetweenDataStructures.Triangle3ToCompressedMesh(triangles3D);
+            meshes.Add(meshPart);
+        }
+
+        generatedMesh = CombineMeshes(meshes);
+    }
+
+    private bool IsPolygonCounterClockwise(List<MyVector2> points)
+    {
+        float sum = 0f;
+
+        for (int i = 0; i < points.Count; i++)
+        {
+            MyVector2 current = points[i];
+            MyVector2 next = points[(i + 1) % points.Count];
+            sum += (next.x - current.x) * (next.y + current.y);
+        }
+
+        return sum > 0;
+    }
+
+    private Mesh CombineMeshes(List<Mesh> meshes)
+    {
+        CombineInstance[] combine = new CombineInstance[meshes.Count];
+        for (int i = 0; i < meshes.Count; i++)
+        {
+            combine[i].mesh = meshes[i];
+            combine[i].transform = Matrix4x4.identity;
+        }
+
+        Mesh combinedMesh = new Mesh();
+        combinedMesh.CombineMeshes(combine, true, false);
+        return combinedMesh;
+    }
+
+    private void ClearMesh()
+    {
+        generatedMesh = null;
+    }
+
     private Texture2D GenerateTextureWithChannel(Texture2D image, Channel channel)
     {
-        // 创建一个新的临时纹理，用于显示特定的通道
         Texture2D tempTexture = new Texture2D(image.width, image.height);
-
-        // 获取图片的所有像素信息
         Color[] pixels = image.GetPixels();
-
         bool hasAlpha = image.format == TextureFormat.ARGB32 || image.format == TextureFormat.RGBA32 ||
                         image.format == TextureFormat.DXT5 || image.format == TextureFormat.PVRTC_RGBA4 ||
-                        image.format == TextureFormat.ETC2_RGBA8; // 检查图片格式是否包含Alpha通道
+                        image.format == TextureFormat.ETC2_RGBA8;
 
         for (int i = 0; i < pixels.Length; i++)
         {
@@ -158,118 +314,108 @@ public class EffectClipperTool : EditorWindow
             switch (channel)
             {
                 case Channel.RGBA:
-                    tempTexture.SetPixel(i % image.width, i / image.width, pixel); // 原始颜色
+                    tempTexture.SetPixel(i % image.width, i / image.width, pixel);
                     break;
                 case Channel.R:
-                    tempTexture.SetPixel(i % image.width, i / image.width, new Color(pixel.r, 0, 0, pixel.a)); // 只显示红色
+                    tempTexture.SetPixel(i % image.width, i / image.width, new Color(pixel.r, 0, 0, pixel.a));
                     break;
                 case Channel.G:
-                    tempTexture.SetPixel(i % image.width, i / image.width, new Color(0, pixel.g, 0, pixel.a)); // 只显示绿色
+                    tempTexture.SetPixel(i % image.width, i / image.width, new Color(0, pixel.g, 0, pixel.a));
                     break;
                 case Channel.B:
-                    tempTexture.SetPixel(i % image.width, i / image.width, new Color(0, 0, pixel.b, pixel.a)); // 只显示蓝色
+                    tempTexture.SetPixel(i % image.width, i / image.width, new Color(0, 0, pixel.b, pixel.a));
                     break;
                 case Channel.A:
                     if (hasAlpha)
                     {
-                        tempTexture.SetPixel(i % image.width, i / image.width, new Color(pixel.a, pixel.a, pixel.a, 1)); // 显示Alpha通道
+                        tempTexture.SetPixel(i % image.width, i / image.width, new Color(pixel.a, pixel.a, pixel.a, 1));
                     }
                     else
                     {
-                        tempTexture.SetPixel(i % image.width, i / image.width, Color.black); // 如果没有Alpha通道，显示黑色
+                        tempTexture.SetPixel(i % image.width, i / image.width, Color.black);
                     }
                     break;
             }
         }
 
-        // 应用更改
         tempTexture.Apply();
         return tempTexture;
     }
 
-   private void HandleMouseEvents(Rect imageRect)
-{
-    Event e = Event.current;
-
-    // 检查是否有正在绘制的轮廓
-    if (currentDrawingContour == null)
+    private void HandleMouseEvents(Rect imageRect)
     {
-        return; // 如果没有正在绘制的轮廓，直接返回，防止空引用错误
-    }
+        Event e = Event.current;
 
-    if (!imageRect.Contains(e.mousePosition))
-        return;
-
-    Vector2 mousePos = e.mousePosition;
-    Vector2 point = mousePos - imageRect.position;
-    point.x /= imageRect.width;
-    point.y /= imageRect.height;
-
-    if (e.type == EventType.MouseDown)
-    {
-        if (isDrawMode)
+        if (currentDrawingContour == null)
         {
-            // 绘制/删除模式
-            if (e.button == 0)
+            return;
+        }
+
+        if (!imageRect.Contains(e.mousePosition))
+            return;
+
+        Vector2 mousePos = e.mousePosition;
+        Vector2 point = mousePos - imageRect.position;
+        point.x /= imageRect.width;
+        point.y /= imageRect.height;
+
+        if (e.type == EventType.MouseDown)
+        {
+            if (isDrawMode)
             {
-                // 左键添加点
-                currentDrawingContour.points.Add(point);
-                e.Use();
-                Repaint();
-            }
-            else if (e.button == 1)
-            {
-                // 右键删除最近的点
-                int index = FindClosestPointIndex(currentDrawingContour.points, point, imageRect);
-                if (index >= 0)
+                if (e.button == 0)
                 {
-                    currentDrawingContour.points.RemoveAt(index);
+                    currentDrawingContour.points.Add(point);
+                    e.Use();
                     Repaint();
                 }
-                e.Use();
-            }
-        }
-        else
-        {
-            // 移动/添加模式
-            if (e.button == 0)
-            {
-                // 左键拖动顶点
-                draggedPointIndex = FindClosestPointIndex(currentDrawingContour.points, point, imageRect);
-                e.Use();
-            }
-            else if (e.button == 1)
-            {
-                // 右键插入点到线段
-                int index = FindClosestEdgeIndex(currentDrawingContour.points, point, imageRect);
-                if (index >= 0)
+                else if (e.button == 1)
                 {
-                    currentDrawingContour.points.Insert(index + 1, point);
-                    Repaint();
+                    int index = FindClosestPointIndex(currentDrawingContour.points, point, imageRect);
+                    if (index >= 0)
+                    {
+                        currentDrawingContour.points.RemoveAt(index);
+                        Repaint();
+                    }
+                    e.Use();
                 }
-                e.Use();
+            }
+            else
+            {
+                if (e.button == 0)
+                {
+                    draggedPointIndex = FindClosestPointIndex(currentDrawingContour.points, point, imageRect);
+                    e.Use();
+                }
+                else if (e.button == 1)
+                {
+                    int index = FindClosestEdgeIndex(currentDrawingContour.points, point, imageRect);
+                    if (index >= 0)
+                    {
+                        currentDrawingContour.points.Insert(index + 1, point);
+                        Repaint();
+                    }
+                    e.Use();
+                }
             }
         }
-    }
-    else if (e.type == EventType.MouseDrag && draggedPointIndex != -1 && e.button == 0)
-    {
-        // 拖动顶点更新位置
-        currentDrawingContour.points[draggedPointIndex] = point;
-
-        if (draggedPointIndex == 0)
+        else if (e.type == EventType.MouseDrag && draggedPointIndex != -1 && e.button == 0)
         {
-            currentDrawingContour.points[currentDrawingContour.points.Count - 1] = point;
+            currentDrawingContour.points[draggedPointIndex] = point;
+
+            if (draggedPointIndex == 0)
+            {
+                currentDrawingContour.points[currentDrawingContour.points.Count - 1] = point;
+            }
+
+            Repaint();
+            e.Use();
         }
-
-        Repaint();
-        e.Use();
+        else if (e.type == EventType.MouseUp && e.button == 0)
+        {
+            draggedPointIndex = -1;
+        }
     }
-    else if (e.type == EventType.MouseUp && e.button == 0)
-    {
-        draggedPointIndex = -1; // 结束拖动
-    }
-}
-
 
     private void DrawOuterContourList()
     {
@@ -288,14 +434,7 @@ public class EffectClipperTool : EditorWindow
 
             if (GUILayout.Button(contour.isDrawing ? "结束绘制" : "开始绘制", GUILayout.Width(80)))
             {
-                if (isDrawing && currentDrawingContour != null && currentDrawingContour != contour)
-                {
-                    EditorUtility.DisplayDialog("提示", "请先结束当前轮廓的绘制。", "确定");
-                }
-                else
-                {
-                    ToggleDrawing(contour);
-                }
+                ToggleDrawing(contour);
             }
 
             GUI.backgroundColor = originalColor;
@@ -315,9 +454,9 @@ public class EffectClipperTool : EditorWindow
             {
                 outerContours.RemoveAt(i);
                 Repaint();
-                GUILayout.EndHorizontal();  // 确保删除后立即退出当前布局
+                GUILayout.EndHorizontal();
                 GUILayout.EndVertical();
-                return; // 添加 return 来防止布局继续执行
+                return;
             }
             GUI.enabled = true;
 
@@ -330,7 +469,7 @@ public class EffectClipperTool : EditorWindow
 
             DrawHoleList(contour.holes);
 
-            GUILayout.EndVertical(); // 确保匹配的布局调用
+            GUILayout.EndVertical();
         }
 
         EditorGUI.indentLevel--;
@@ -350,14 +489,8 @@ public class EffectClipperTool : EditorWindow
 
             if (GUILayout.Button(hole.isDrawing ? "结束绘制" : "开始绘制", GUILayout.Width(80)))
             {
-                if (isDrawing && currentDrawingContour != null && currentDrawingContour != hole)
-                {
-                    EditorUtility.DisplayDialog("提示", "请先结束当前轮廓的绘制。", "确定");
-                }
-                else
-                {
-                    ToggleDrawing(hole);
-                }
+                EndAllDrawings();
+                ToggleDrawing(hole);
             }
 
             GUI.backgroundColor = originalColor;
@@ -377,9 +510,9 @@ public class EffectClipperTool : EditorWindow
             {
                 holes.RemoveAt(i);
                 Repaint();
-                EditorGUILayout.EndHorizontal(); // 确保删除后布局结束
+                EditorGUILayout.EndHorizontal();
                 EditorGUI.indentLevel--;
-                return; // 添加 return 来防止布局继续执行
+                return;
             }
             GUI.enabled = true;
 
@@ -389,26 +522,54 @@ public class EffectClipperTool : EditorWindow
         EditorGUI.indentLevel--;
     }
 
+    private void EndAllDrawings()
+    {
+        foreach (var contour in outerContours)
+        {
+            if (contour.isDrawing)
+            {
+                contour.isDrawing = false;
+            }
+
+            foreach (var hole in contour.holes)
+            {
+                if (hole.isDrawing)
+                {
+                    hole.isDrawing = false;
+                }
+            }
+        }
+
+        isDrawing = false;
+        currentDrawingContour = null;
+    }
+
     private void ToggleDrawing(Contour contour)
     {
-        contour.isDrawing = !contour.isDrawing;
-        isDrawing = contour.isDrawing;
-
+        // 如果当前轮廓正在绘制，则结束绘制
         if (contour.isDrawing)
         {
-            currentDrawingContour = contour;
+            contour.isDrawing = false;
+            isDrawing = false;
+            currentDrawingContour = null;
         }
         else
         {
-            if (contour.points.Count > 2 && contour.points[0] != contour.points[contour.points.Count - 1])
-            {
-                contour.points.Add(contour.points[0]); // 闭合线
-            }
-            currentDrawingContour = null;
+            // 如果其他轮廓正在绘制，结束它们的绘制状态
+            EndAllDrawings();
+
+            // 开始新的轮廓绘制
+            contour.isDrawing = true;
+            isDrawing = true;
+            currentDrawingContour = contour;
         }
 
+        // 重新绘制界面
         Repaint();
     }
+
+
+
 
     private int FindClosestPointIndex(List<Vector2> points, Vector2 normalizedMousePos, Rect imageRect)
     {
@@ -489,6 +650,7 @@ public class EffectClipperTool : EditorWindow
             if (linePoints.Length > 1)
             {
                 Handles.DrawAAPolyLine(2, linePoints);
+                Handles.DrawAAPolyLine(2, new Vector3[] { linePoints[linePoints.Length - 1], linePoints[0] });
             }
 
             for (int i = 0; i < linePoints.Length; i++)
@@ -521,13 +683,109 @@ public class EffectClipperTool : EditorWindow
     private Texture2D MakeTex(int width, int height, Color col)
     {
         Color[] pix = new Color[width * height];
-        for (int i = 0; i < pix.Length; i++)
+        for (int i = 0; pix.Length > i; i++)
             pix[i] = col;
 
         Texture2D result = new Texture2D(width, height);
         result.SetPixels(pix);
         result.Apply();
         return result;
+    }
+
+    // 保存网格到文件
+    // 保存网格到文件
+    private void SaveMeshToFile(string path)
+    {
+        if (generatedMesh == null || string.IsNullOrEmpty(path))
+        {
+            Debug.LogError("没有生成网格或路径无效。");
+            return;
+        }
+
+        // 左右镜像顶点
+        Mesh mirroredMesh = MirrorMesh(generatedMesh);
+
+        try
+        {
+            using (StreamWriter writer = new StreamWriter(path))
+            {
+                // 使用用户输入的文件名作为网格名称
+                writer.Write(MeshToString(mirroredMesh, saveFileName));
+                Debug.Log("网格已成功保存到: " + path);
+            }
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError("保存网格时发生错误: " + e.Message);
+        }
+
+        // 自动刷新文件夹
+        AssetDatabase.Refresh();
+    }
+
+
+    // 将网格数据转换为字符串
+    private string MeshToString(Mesh mesh, string meshName)
+    {
+        System.Text.StringBuilder sb = new System.Text.StringBuilder();
+
+        // 将网格的名称设置为用户输入的文件名
+        sb.Append($"g {meshName}\n");
+
+        foreach (Vector3 v in mesh.vertices)
+        {
+            sb.Append($"v {v.x} {v.y} {v.z}\n");
+        }
+
+        foreach (Vector3 n in mesh.normals)
+        {
+            sb.Append($"vn {n.x} {n.y} {n.z}\n");
+        }
+
+        foreach (Vector2 uv in mesh.uv)
+        {
+            sb.Append($"vt {uv.x} {uv.y}\n");
+        }
+
+        for (int i = 0; i < mesh.triangles.Length; i += 3)
+        {
+            sb.Append($"f {mesh.triangles[i] + 1}/{mesh.triangles[i] + 1}/{mesh.triangles[i] + 1} ");
+            sb.Append($"{mesh.triangles[i + 1] + 1}/{mesh.triangles[i + 1] + 1}/{mesh.triangles[i + 1] + 1} ");
+            sb.Append($"{mesh.triangles[i + 2] + 1}/{mesh.triangles[i + 2] + 1}/{mesh.triangles[i + 2] + 1}\n");
+        }
+
+        return sb.ToString();
+    }
+
+
+    // 镜像网格并修正三角形顺序
+    private Mesh MirrorMesh(Mesh originalMesh)
+    {
+        Mesh mirroredMesh = new Mesh();
+        Vector3[] vertices = originalMesh.vertices;
+        Vector2[] uvs = new Vector2[vertices.Length];
+        int[] triangles = originalMesh.triangles;
+
+        for (int i = 0; i < vertices.Length; i++)
+        {
+            vertices[i].x = -vertices[i].x; // 左右镜像
+            uvs[i] = new Vector2(1 - (vertices[i].x + 0.5f), vertices[i].y); // UV也需要调整
+        }
+
+        // 修正三角形顺序，防止法线反转
+        for (int i = 0; i < triangles.Length; i += 3)
+        {
+            int temp = triangles[i];
+            triangles[i] = triangles[i + 2];
+            triangles[i + 2] = temp;
+        }
+
+        mirroredMesh.vertices = vertices;
+        mirroredMesh.uv = uvs;
+        mirroredMesh.triangles = triangles;
+        mirroredMesh.normals = originalMesh.normals;
+
+        return mirroredMesh;
     }
 
     public class Contour
