@@ -141,8 +141,8 @@ public static class MeshUtils
         return new Vector2(x, y);
     }
 
-    // 镜像网格，修正三角形顺序
-    public static Mesh MirrorMesh(Mesh originalMesh)
+    // 镜像网格，修正三角形顺序并根据画布比例缩放顶点
+    public static Mesh MirrorMesh(Mesh originalMesh, float aspectRatio)
     {
         originalMesh.RecalculateNormals();
         Mesh mirroredMesh = new Mesh();
@@ -153,13 +153,30 @@ public static class MeshUtils
 
         for (int i = 0; i < vertices.Length; i++)
         {
-            uvs[i] = new Vector2(vertices[i].x, vertices[i].z); //归一化
+            // 归一化 UV
+            uvs[i] = new Vector2(vertices[i].x, vertices[i].z);
+
+            // 将顶点移动到中心 [-0.5, 0.5] 范围
             vertices[i].x -= 0.5f;
-            vertices[i].z -= 0.5f;  //回到中心
-            vertices[i].x = -vertices[i].x; // 左右镜像,因为坐标系原因，unity会做默认的镜像
+            vertices[i].z -= 0.5f;
+
+            // 左右镜像处理
+            vertices[i].x = -vertices[i].x;
+
+            // 根据画布长宽比例缩放 Z 轴和 X 轴
+            if (aspectRatio > 1.0f)
+            {
+                // 如果宽大于高（如2:1），缩放Z轴，使得长宽比对齐
+                vertices[i].z *= 1 / aspectRatio;  // 缩放 Z 轴
+            }
+            else
+            {
+                // 如果高大于宽（如1:2），缩放X轴，使得长宽比对齐
+                vertices[i].x *= aspectRatio;  // 缩放 X 轴
+            }
         }
 
-        // 修正三角形顺序，防止法线反转1
+        // 修正三角形顺序，防止法线反转
         for (int i = 0; i < triangles.Length; i += 3)
         {
             int temp = triangles[i];
@@ -167,15 +184,16 @@ public static class MeshUtils
             triangles[i + 2] = temp;
         }
 
+        // 更新镜像后的网格数据
         mirroredMesh.vertices = vertices;
         mirroredMesh.uv = uvs;
         mirroredMesh.triangles = triangles;
         mirroredMesh.normals = normals; // 应用处理后的法线
         mirroredMesh.RecalculateNormals();
 
-
         return mirroredMesh;
     }
+
     public static int FindClosestPointIndex(List<Vector2> points, Vector2 normalizedMousePos, Rect imageRect)
     {
         int closestIndex = -1;

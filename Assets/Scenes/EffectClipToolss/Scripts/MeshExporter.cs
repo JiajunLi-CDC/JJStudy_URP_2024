@@ -4,7 +4,7 @@ using UnityEditor;
 
 public static class MeshExporter
 {
-    public static void SaveMeshToFile(Mesh mesh, string path)
+    public static void SaveMeshToFile(Mesh mesh, string path, float aspectRatio)
     {
         if (mesh == null || string.IsNullOrEmpty(path))
         {
@@ -12,7 +12,8 @@ public static class MeshExporter
             return;
         }
 
-        Mesh mirroredMesh = MeshUtils.MirrorMesh(mesh);
+        // 传递长宽比以应用缩放和镜像操作
+        Mesh mirroredMesh = MeshUtils.MirrorMesh(mesh, aspectRatio);
 
         try
         {
@@ -29,6 +30,7 @@ public static class MeshExporter
 
         AssetDatabase.Refresh();
     }
+
 
     private static string MeshToString(Mesh mesh, string meshName)
     {
