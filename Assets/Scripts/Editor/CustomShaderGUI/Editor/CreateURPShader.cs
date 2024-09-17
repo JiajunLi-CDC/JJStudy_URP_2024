@@ -8,7 +8,7 @@ using System.Text.RegularExpressions;
  
 public class CreateURPShader
 {
-    public const string shaderTemplatePath = "Assets/CustomShaderGUI/Editor/Template/URPShader.shader";
+    public const string shaderTemplatePath = "Assets/Scripts/Editor/CustomShaderGUI/Editor/Template/URPShader.shader";
 
     [MenuItem("Assets/Create/Shader/URP Shader")]
     public static void CreatURPShaderTemplate()
