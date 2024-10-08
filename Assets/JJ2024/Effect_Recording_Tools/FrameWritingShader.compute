@@ -1,0 +1,47 @@
+#pragma kernel CSMain
+#pragma kernel CombineTextures
+
+RWTexture2D<float4> Result;       // 最终的合成纹理
+Texture2D<float4> BlackFrame;     // 黑色背景的帧
+Texture2D<float4> WhiteFrame;     // 白色背景的帧
+int2 FramePos;                    // 当前帧的位置
+
+[numthreads(16, 16, 1)]
+void CSMain (uint3 id : SV_DispatchThreadID)
+{
+    // 获取黑色和白色背景的像素
+    float4 blackPixel = BlackFrame[id.xy];
+    float4 whitePixel = WhiteFrame[id.xy];
+
+    // 计算Alpha通道
+    float alpha = max(whitePixel.r - blackPixel.r, max(whitePixel.g - blackPixel.g, whitePixel.b - blackPixel.b));
+    alpha = 1.0f - alpha;
+
+    // 对 blackPixel 和 whitePixel 进行去色（转换为灰度值）
+    // float blackGray = 0.299 * blackPixel.r + 0.587 * blackPixel.g + 0.114 * blackPixel.b;
+    // float whiteGray = 0.299 * whitePixel.r + 0.587 * whitePixel.g + 0.114 * whitePixel.b;
+    //
+    // // 计算 Alpha 通道，基于灰度差异
+    // float alpha = clamp(1.0f - (whiteGray - blackGray), 0.0f, 1.0f);
+
+
+    float4 resultColor = blackPixel;
+    resultColor.a = alpha;
+    
+    // resultColor.rgb = pow(resultColor.rgb, 1.0 / 2.2);
+
+    Result[id.xy + FramePos] = resultColor;
+}
+
+// 新增的 kernel，用于将多个 RenderTexture 合成到一个目标 Result
+[numthreads(16, 16, 1)]
+void CombineTextures(uint3 id : SV_DispatchThreadID)
+{
+    // 获取当前线程位置
+    int2 targetPos = id.xy + FramePos;  // 目标位置
+
+    // 从源纹理读取像素并写入目标位置
+    float4 sourcePixel = BlackFrame[id.xy];  // 使用 BlackFrame 作为源纹理
+    // sourcePixel.rgb = pow(sourcePixel.rgb, 1.0 / 2.2);
+    Result[targetPos] = sourcePixel;  // 将源像素写入目标位置
+}

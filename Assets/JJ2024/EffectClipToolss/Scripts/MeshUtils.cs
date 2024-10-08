@@ -179,6 +179,16 @@ namespace JJEffectClipperTool
                     vertices[i].x *= aspectRatio; // 缩放 X 轴
                 }
             }
+            
+            for (int i = 0; i < vertices.Length; i++)
+            {
+                // 左右镜像处理
+                // vertices[i].x = -vertices[i].x;
+                
+                // 翻转轴向
+                vertices[i].y = vertices[i].z;
+                vertices[i].z = 0;
+            }
 
             // 修正三角形顺序，防止法线反转
             for (int i = 0; i < triangles.Length; i += 3)

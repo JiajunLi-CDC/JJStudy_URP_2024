@@ -26,13 +26,13 @@ namespace JJEffectClipperTool
                             new Color(pixel.r, pixel.g, pixel.b, alphaValue));
                         break;
                     case EffectClipperToolNew.Channel.R:
-                        tempTexture.SetPixel(i % image.width, i / image.width, new Color(pixel.r, 0, 0, alphaValue));
+                        tempTexture.SetPixel(i % image.width, i / image.width, new Color(pixel.r, 0, 0, 1));
                         break;
                     case EffectClipperToolNew.Channel.G:
-                        tempTexture.SetPixel(i % image.width, i / image.width, new Color(0, pixel.g, 0, alphaValue));
+                        tempTexture.SetPixel(i % image.width, i / image.width, new Color(0, pixel.g, 0, 1));
                         break;
                     case EffectClipperToolNew.Channel.B:
-                        tempTexture.SetPixel(i % image.width, i / image.width, new Color(0, 0, pixel.b, alphaValue));
+                        tempTexture.SetPixel(i % image.width, i / image.width, new Color(0, 0, pixel.b, 1));
                         break;
                     case EffectClipperToolNew.Channel.A:
                         tempTexture.SetPixel(i % image.width, i / image.width,
@@ -95,13 +95,13 @@ namespace JJEffectClipperTool
                                     newPixel = new Color(framePixel.r, framePixel.g, framePixel.b, alphaValue);
                                     break;
                                 case EffectClipperToolNew.Channel.R:
-                                    newPixel = new Color(framePixel.r, 0, 0, alphaValue);
+                                    newPixel = new Color(framePixel.r, 0, 0, 1);
                                     break;
                                 case EffectClipperToolNew.Channel.G:
-                                    newPixel = new Color(0, framePixel.g, 0, alphaValue);
+                                    newPixel = new Color(0, framePixel.g, 0, 1);
                                     break;
                                 case EffectClipperToolNew.Channel.B:
-                                    newPixel = new Color(0, 0, framePixel.b, alphaValue);
+                                    newPixel = new Color(0, 0, framePixel.b, 1);
                                     break;
                                 case EffectClipperToolNew.Channel.A:
                                     newPixel = new Color(alphaValue, alphaValue, alphaValue, 1);

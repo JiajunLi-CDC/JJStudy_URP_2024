@@ -30,15 +30,17 @@ Material:
         m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
+    - _AlphaDstBlend: 0
+    - _AlphaSrcBlend: 1
     - _BaseParameter: 1
     - _ChannelType: 0
-    - _DstBlend: 0
+    - _DstBlend: 10
     - _DstFactor: 10
     - _Other: 1
     - _OtherSetting: 1
     - _RenderType: 0
     - _SrcBlend: 1
-    - _SrcFactor: 1
+    - _SrcFactor: 5
     m_Colors:
     - _Color: {r: 1, g: 1, b: 1, a: 1}
     - _MainColor: {r: 1, g: 1, b: 1, a: 1}

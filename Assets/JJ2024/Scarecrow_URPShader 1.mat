@@ -8,7 +8,7 @@ Material:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: Scarecrow_URPShader 1
-  m_Shader: {fileID: 4800000, guid: 6d3db20d207c89443aa1edbabdb6aec7, type: 3}
+  m_Shader: {fileID: 4800000, guid: 1669046321967f046a55e8f5b1bfcff2, type: 3}
   m_ValidKeywords:
   - _CHANNELTYPE_CHANNELALL
   m_InvalidKeywords:
@@ -18,14 +18,14 @@ Material:
   m_LightmapFlags: 4
   m_EnableInstancingVariants: 0
   m_DoubleSidedGI: 0
-  m_CustomRenderQueue: -1
+  m_CustomRenderQueue: 3000
   stringTagMap: {}
   disabledShaderPasses: []
   m_SavedProperties:
     serializedVersion: 3
     m_TexEnvs:
     - _MainTex:
-        m_Texture: {fileID: 2800000, guid: 9d298f98ff59a2b409bfcd00aaa33cb0, type: 3}
+        m_Texture: {fileID: 2800000, guid: 6d6b0a28ed514284cb95ec9d25e78be5, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     m_Ints: []
@@ -42,5 +42,5 @@ Material:
     m_Colors:
     - _Color: {r: 1, g: 1, b: 1, a: 1}
     - _MainColor: {r: 1, g: 1, b: 1, a: 1}
-    - _Sequence: {r: 5, g: 5, b: 1, a: 1}
+    - _Sequence: {r: 5, g: 4, b: 1, a: 1}
   m_BuildTextureStacks: []

@@ -13,8 +13,10 @@
 
         [Foldout(1,2,0,1)]
         _OtherSetting("OtherSetting_Foldout",float) = 1
-        [Enum(UnityEngine.Rendering.BlendMode)]_SrcFactor("SrcFactor",int) = 1
-        [Enum(UnityEngine.Rendering.BlendMode)]_DstFactor("DstFactor",int) = 10
+        [Enum(UnityEngine.Rendering.BlendMode)]_SrcBlend("SrcFactor",int) = 1
+        [Enum(UnityEngine.Rendering.BlendMode)]_DstBlend("DstFactor",int) = 10
+        [Enum(UnityEngine.Rendering.BlendMode)]_AlphaSrcBlend("__alphaSrc",int) = 1
+        [Enum(UnityEngine.Rendering.BlendMode)]_AlphaDstBlend("__alphaDst",int) = 10
     }
     SubShader
     {
@@ -27,7 +29,8 @@
             //渲染队列
             "Queue"="Transparent"
         }
-        Blend [_SrcFactor] [_DstFactor]
+        Blend[_SrcBlend][_DstBlend],[_AlphaSrcBlend][_AlphaDstBlend]
+        ZWrite Off
         Pass
         {
             HLSLPROGRAM
@@ -69,6 +72,13 @@
                 o.uv = float2(v.uv.x / _Sequence.y, v.uv.y / _Sequence.x + (_Sequence.x - 1) / _Sequence.x);
                 o.uv.x += frac(floor(_Time.y * _Sequence.y * _Sequence.z) / _Sequence.y);
                 o.uv.y -= frac(floor(_Time.y * _Sequence.y * _Sequence.z / _Sequence.y) / _Sequence.x);
+                float frameIndex = frac(_Time.y * _Sequence.z); // 控制帧速率，帧的循环由 Speed 控制
+                float currentFrameX = floor(frameIndex * _Sequence.y); // 当前列
+                float currentFrameY = floor(frameIndex * _Sequence.x); // 当前行
+
+                o.uv.x += currentFrameX / _Sequence.y;
+                o.uv.y -= currentFrameY / _Sequence.x;
+
                 //o.uv.x += floor(_Time.y);
                 //o.uv = float2(v.uv.x/4,v.uv.y/4);
                 //o.uv = TRANSFORM_TEX(v.uv,_MainTex);
@@ -90,7 +100,7 @@
 
                 float4 col = finalCol * _Color;
                 col.rgb = MixFog(col, i.fogCoord);
-                col.rgb = col.rgb * col.a;
+                // col.rgb = col.rgb * col.a;
                 return col;
             }
             ENDHLSL
